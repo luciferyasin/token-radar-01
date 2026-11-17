@@ -1,0 +1,5 @@
+# Build output, installed packages and local secrets are never committed.
+out/
+node_modules/
+.DS_Store
+.env
