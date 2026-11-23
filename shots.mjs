@@ -1,7 +1,7 @@
-// Capture the three token-radar screenshots with Playwright's headless shell.
+// Capture the three Launch Radar screenshots with Playwright's headless shell.
 // It serves the built out/ folder (dashboard plus data.js) on localhost and
 // drives the real dashboard in a browser:
-//   1-board.png    the ranked board
+//   1-board.png    the ranked board with the integrity bar
 //   2-detail.png   the detail drawer of the top-ranked protocol (row click)
 //   3-filtered.png the board filtered to the RWA category (dropdown)
 // Run from the repo root once `node main.ts` has written out/:
@@ -56,14 +56,14 @@ await tab.goto(pageUrl, { waitUntil: "networkidle" });
 await tab.waitForTimeout(600);
 await tab.screenshot({ path: join(shotPath, "1-board.png") });
 
-// 2. A protocol detail view: open the top-ranked row and wait for the dialog.
-await tab.click("tbody tr:first-child");
+// 2. A protocol detail view: open the top-ranked row and wait for the drawer.
+await tab.click("tbody tr.row:first-child");
 await tab.waitForTimeout(600);
 await tab.screenshot({ path: join(shotPath, "2-detail.png") });
 
 // 3. A filtered view: reload, choose the RWA category, wait for the filtered table.
 await tab.goto(pageUrl, { waitUntil: "networkidle" });
-await tab.selectOption("#category", "RWA");
+await tab.selectOption('select[aria-label="Category"]', "RWA");
 await tab.waitForTimeout(600);
 await tab.screenshot({ path: join(shotPath, "3-filtered.png") });
 
