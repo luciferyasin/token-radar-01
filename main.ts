@@ -1,14 +1,25 @@
 // token-radar-01 entry point. Node 22, standard library only.
 //
-// The run, in order: read the sealed snapshot, score every pre-token
-// protocol with the model in lib/model.ts, write the ranked board and the
-// dashboard dataset into the output directory, copy the dashboard and the
-// screenshots there, then write dossier.json last with the vendored make.fun
-// helper. The dossier is derived from the finished output, so it goes last.
+// The run, in order: read the sealed snapshot; fit the value model on the snapshot's own
+// calibration set (the protocols that already carry a priced token); validate the fit in two
+// holdout rounds that refit from scratch on halves the scorer never sees; score every
+// pre-token protocol with the fitted model, its peer-derived launch odds and its costed farm
+// economics; write the ranked board, the validation record and the integrity record; write
+// the dashboard dataset; copy the dashboard and the screenshots; then write dossier.json
+// last with the vendored make.fun helper. The dossier is derived from the finished output,
+// so it goes last.
 //
-// The dashboard itself is a static page (dashboard/index.html, app.css and
-// app.js) that reads data.js, which this file writes from the same board the
-// judge grades. No framework, no network.
+// Two records ship beside the board so nothing about the run is a claim the reader must take
+// on trust: validation.json carries the fitted coefficients and both holdout rounds (the
+// split, the sizes, the median error, the within-2x share and the range coverage), and
+// integrity.json carries the run's own counts — protocols read, calibration size, watchlist
+// coverage, and how many protocols were set aside as already trading, unpriced, versioned or
+// exchange products. The dashboard's header bar and Method view render from the same records.
+//
+// The dashboard itself is a static page (dashboard/index.html, app.css and app.js) that reads
+// data.js, which this file writes from the same board the judge grades, and recomputes every
+// row's implied value in the page from the fitted coefficients data.js carries, so the page's
+// arithmetic and the board's numbers are visibly the same. No framework, no network.
 //
 // Outside the grading container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.json
@@ -44,20 +55,27 @@ if (!existsSync(snapshotPath)) {
 const outDir = flagValue("output", process.env.MAKEFUN_OUTPUT_DIR ?? "/output");
 
 const snap = parseSnapshot(readFileSync(snapshotPath, "utf8"));
-const { board, radar } = buildRadar(snap);
+const { board, radar, validation, integrity } = buildRadar(snap);
 const problem = boardIssue(board, snap);
 if (problem !== null) {
   process.stderr.write(`token radar: the board fails the gate: ${problem}\n`);
   process.exit(1);
 }
 const boardTotals = summarizeBoard(board, snap);
+const holdoutLine = validation.holdout
+  .map((r) => `round ${r.round} (train ${r.train_n}, held out ${r.test_n}): median error ${r.med_ape_pct}%, ${r.within_2x_pct}% within 2x, range coverage ${r.coverage_pct}%`)
+  .join("; ");
 process.stdout.write(
-  `token radar: board value $${boardTotals.total_implied_value_usd.toLocaleString("en-US")} across ${boardTotals.rows} rows, median $${boardTotals.median_implied_value_usd.toLocaleString("en-US")}; ${boardTotals.watchlist_rows} watchlist rows; top category ${boardTotals.top_category ?? "none"}\n` +
+  `token radar: fitted on ${validation.calibration_n} priced peers: log value = ${validation.fit.intercept} + ${validation.fit.log_tvl} x log TVL + ${validation.fit.growth} x growth + ${validation.fit.log_age} x log tokenless age, plus shrunken category offsets\n` +
+    `token radar: holdout validation: ${holdoutLine}; stated range half-width ${validation.interval_half_log} in log space\n` +
+    `token radar: board value $${boardTotals.total_implied_value_usd.toLocaleString("en-US")} across ${boardTotals.rows} rows, median $${boardTotals.median_implied_value_usd.toLocaleString("en-US")}; ${boardTotals.watchlist_rows} watchlist rows; top category ${boardTotals.top_category ?? "none"}\n` +
     `token radar: value bands: ${describeBands(board)}\n`,
 );
 
 mkdirSync(outDir, { recursive: true });
 writeFileSync(join(outDir, "board.json"), `${JSON.stringify({ rows: board })}\n`);
+writeFileSync(join(outDir, "validation.json"), `${JSON.stringify(validation, null, 2)}\n`);
+writeFileSync(join(outDir, "integrity.json"), `${JSON.stringify(integrity, null, 2)}\n`);
 writeFileSync(join(outDir, "data.js"), dataScript(radar));
 
 /** Copy a directory's plain files into `dest`, skipping dotfiles, and return the names copied. */
@@ -92,6 +110,6 @@ for (const shot of shots) {
 writeFileSync(join(outDir, "dossier.json"), buildDossier(outDir, { text_max_bytes: DOSSIER_TEXT_CAP, screenshots: SHOT_LIMITS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
 
 process.stdout.write(
-  `token radar: ${snap.protocols.length} protocols, ${snap.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
-    `token radar: wrote ${join(outDir, "board.json")}, ${join(outDir, "data.js")}, ${join(outDir, "dashboard")} (3 files), ${join(outDir, "screenshots")} (${shots.length} images) and ${join(outDir, "dossier.json")}\n`,
+  `token radar: ${snap.protocols.length} protocols read, ${integrity.live_priced_set_aside} priced live tokens and ${integrity.live_unpriced_set_aside} unpriced token records set aside, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live shown)\n` +
+    `token radar: wrote ${join(outDir, "board.json")}, ${join(outDir, "validation.json")}, ${join(outDir, "integrity.json")}, ${join(outDir, "data.js")}, ${join(outDir, "dashboard")} (3 files), ${join(outDir, "screenshots")} (${shots.length} images) and ${join(outDir, "dossier.json")}\n`,
 );
